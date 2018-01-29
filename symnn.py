@@ -19,10 +19,10 @@ def permutation_invariant(input_shape, layer_sizes, tuple_dim = 2, reduce_fun = 
     Implements a permutation invariant layer.
 
     Args:
-    input_shape -- A `tuple` -- input shape of one element in a batch.
-    layer_sizes --
-    tuple_dim --
-    reduce_fun --
+    input_shape -- A `tuple` - input shape of one element in a batch.
+    layer_sizes -- A `list` of `int`. Sizes of layers in neural network applied to each tuple.
+    tuple_dim -- A `int`, size of one tuple.
+    reduce_fun -- A `string`, type of function to "average" over all tuples.
 
     Returns:
     g -- A `Sequential` keras container.
