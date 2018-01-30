@@ -11,10 +11,10 @@ from keras.engine.topology import Layer
 from keras.layers import Dense, Conv2D, Lambda
 from keras.models import Sequential
 import numpy as np
+import tensorflow as tf
 
 
-
-def permutation_invariant(input_shape, layer_sizes, tuple_dim = 2, reduce_fun = "mean", **kwargs):
+def permutation_invariant(input_shape, layer_sizes, tuple_dim = 2, reduce_fun = "mean"):
     """
     Implements a permutation invariant layer.
 
@@ -77,7 +77,7 @@ class Tuples(Layer):
         self.tuple_dim = tuple_dim
         super(Tuples, self).__init__(**kwargs)
 
-    def create_indices(n, k = 2):
+    def create_indices(self, n, k = 2):
         """
         Creates all integer valued coordinate k-tuples in k dimensional hypercube with edge size n.
         for example n = 4, k = 2
@@ -105,7 +105,8 @@ class Tuples(Layer):
 
     def build(self, input_shape):
         # Create indexing tuple
-        self.gathering_indices = create_indices(input_shape[1], self.tuple_dim)
+
+        self.gathering_indices = self.create_indices(input_shape[1], self.tuple_dim)
         super(Tuples, self).build(input_shape)  # Be sure to call this somewhere!
 
 
@@ -129,15 +130,31 @@ class Tuples(Layer):
     def compute_output_shape(self, input_shape):
         output_shape = (
             input_shape[0],
-            input_shape[1]**tuple_dim,
-            input_shape[2] * tuple_dim
+            input_shape[1] ** self.tuple_dim,
+            input_shape[2] * self.tuple_dim
         )
         return output_shape
 
 
 if __name__ == "__main__":
-    print("Testing Tuples Keras Layer: ")
-    x = tf.placeholder(shape = (32, 7, 5), dtype = tf.float32) ## 32 experiments in batch, 7 observations in each experiment, 5 feature columns
-    tuple_layer = Tuples(tuple_dim = 2, input_shape = (32, 7, 5))
+    print("-------------------------------------------------------------------")
+    print("Testing Tuples Keras Layer:")
+    x = tf.placeholder(shape = (5, 3, 2), dtype = tf.float32) ## 32 experiments in batch, 7 observations in each experiment, 5 feature columns
+    tuple_layer = Tuples(tuple_dim = 2, input_shape = (5, 3, 2))
     x_tuppled = tuple_layer(x)
     print(x_tuppled.shape)
+    sess = tf.Session()
+    init = tf.global_variables_initializer()
+    sess.run(init)
+    np.random.seed(0)
+    feed = {x : np.random.randn(5,3,2)}
+    x_eval, x_tuppled_eval = sess.run([x, x_tuppled], feed)
+    print("x value is: ", x_eval)
+    print("x tuppled value is:", x_tuppled_eval)
+
+    print("-------------------------------------------------------------------")
+    print("Testing permutation_invariant function:")
+    ##perm_inv_layer = permutation_invariant(input_shape = (5,3,2), layer_sizes = [5,10,5], reduce_fun = "mean")
+    x_tuppled
+    Conv2D(filters = 10, kernel_size = (1,6))
+    Conv2D(filters = 10, kernel_size = (1,6))
