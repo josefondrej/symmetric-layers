@@ -14,63 +14,79 @@ import numpy as np
 import tensorflow as tf
 
 
-def permutation_invariant(input_shape, layer_sizes, tuple_dim = 2, reduce_fun = "mean"):
+def PermutationInvariant(input_shape, layer_sizes, tuple_dim = 2, reduce_fun = "mean"):
     """
     Implements a permutation invariant layer.
+    Each batch in our data consists of `input_shape[0]` observations
+    each with `input_shape[1]` features.
 
     Args:
-    input_shape -- A pair of `int` - input shape of one element in a batch.
-    layer_sizes -- A `list` of `int`. Sizes of layers in neural network applied to each tuple.
-    tuple_dim -- A `int`, size of one tuple.
+    input_shape -- A pair of `int` - (number of observations in one batch x
+        number of features of each observation). The batch dimension is not included.
+    layer_sizes -- A `list` of `int`. Sizes of layers in the dense neural network applied
+        to each tuple of observations.
+    tuple_dim -- A `int`, how many observations to put in one tuple.
     reduce_fun -- A `string`, type of function to "average" over all tuples.
 
     Returns:
-    g -- A `Sequential` keras container.
+    g -- A `Sequential` keras container - the permutation invariant layer.
+        It consists of one tupple layer that creates all possible `tuple_dim`-tuples
+        of observations. On each tuple is applied the same dense neural network
+        and then some symmetric pooling function is applied across all of them
+        (for example mean or maximum).
     """
     g = Sequential()
-    g.add(Tuples(tuple_dim, input_shape = input_shape))  ## input shape = batch_size x rows x cols -- rows = input_shape[0]**tuple_size, cols = input_shape[1]*tuple_size
-    g.add(Lambda(lambda x : K.expand_dims(x, axis = 2))) ## batch_size x rows x 1 x cols
+
+    ## Tuple layer
+    g.add(Tuples(tuple_dim, input_shape = input_shape))  ## out shape: batch_size x rows x cols
+
+    ## Dense neural net -- implemented with conv layers
+    g.add(Lambda(lambda x : K.expand_dims(x, axis = 2))) ## out shape: batch_size x rows x 1 x cols
     for layer_size in layer_sizes:
-        g.add(Conv2D(filters = layer_size, kernel_size = (1,1), data_format = "channels_last")) ## batch_size x rows x 1 x layer_size
-    g.add(Lambda(lambda x : K.squeeze(x, axis = 2))) ## batch_size x rows x cols
+        g.add(Conv2D(filters = layer_size, kernel_size = (1,1), data_format = "channels_last")) ## out_shape:  batch_size x rows x 1 x layer_size
+    g.add(Lambda(lambda x : K.squeeze(x, axis = 2))) ## lout_shape: batch_size x rows x cols
+
+    ## Pooling layer
     if reduce_fun == "mean":
         lambda_layer = Lambda(lambda x : K.mean(x, axis = 1))
     elif reduce_fun == "max":
         lambda_layer = Lambda(lambda x : K.max(x, axis = 1))
     else:
         raise ValueError("Invalid value for argument `reduce_fun` provided. ")
-    g.add(lambda_layer) ## batch_size x cols
+    g.add(lambda_layer) ## out shape: batch_size x cols
+
     return g
+
 
 class Tuples(Layer):
     """
-    Stack of all possible k-tuple combination of inputs.
-    Takes input of shape (batch_size, num_observations, num_features).
-    One batch element of input looks like this.
+    Creates all possible tuples of rows of 2D tensor.
 
-        Input:
-        x1
-        x2
-        ...
-        xn
+    In the case of tuple_dim = 2, from one input batch:
 
-    The features are in the columns. Each row corresponds to one
-    observation.
+        x_1,
+        x_2,
+        ...
+        x_n,
 
-    The output are all possible k-tuples of observations. Each k-tuple is
-    represented by one row.
+    where x_i are rows of the tensor, it creates 2D output tensor:
 
-        Output:
-        x1 | x1
-        x1 | x2
+        x_1 | x_1
+        x_1 | x_2
         ...
-        x1 | xn
-        x2 | x1
-        x2 | x2
+        x_1 | x_n
+        x_2 | x_1
+        x_2 | x_2
         ...
-        x2 | xn
+        x_2 | x_n
         ...
-        xn | xn
+        x_n | x_n
+
+    Args:
+    tuple_dim -- A `int`. Dimension of one tuple (i.e. how many rows from the input
+    tensor to combine to create a row in output tensor)
+    input_shape -- A `tuple` of `int`. In the most frequent case where our data
+        has shape (batch_size x num_rows x num_cols) this should be (num_rows x num_cols).
     """
 
     def __init__(self, tuple_dim = 2, **kwargs):
@@ -102,11 +118,9 @@ class Tuples(Layer):
 
         return indices_n_k
 
-
     def build(self, input_shape):
         # Create indexing tuple
-
-        self.gathering_indices = self.create_indices(input_shape[1], self.tuple_dim)
+        self.gathering_indices = self.create_indices(input_shape[-2], self.tuple_dim)
         super(Tuples, self).build(input_shape)  # Be sure to call this somewhere!
 
 
@@ -128,58 +142,57 @@ class Tuples(Layer):
 
 
     def compute_output_shape(self, input_shape):
-        output_shape = (
-            input_shape[0],
-            input_shape[1] ** self.tuple_dim,
-            input_shape[2] * self.tuple_dim
-        )
-        return output_shape
+        output_shape = list(input_shape)
+        output_shape[-1] = output_shape[-1] * self.tuple_dim
+        output_shape[-2] = output_shape[-2] ** self.tuple_dim
+        return tuple(output_shape)
 
 
 if __name__ == "__main__":
-    print("-------------------------------------------------------------------")
-    print("Testing Tuples Keras Layer:")
-    x = tf.placeholder(shape = (5, 3, 2), dtype = tf.float32) ## 32 experiments in batch, 7 observations in each experiment, 5 feature columns
-    tuple_layer = Tuples(tuple_dim = 2, input_shape = (5, 3, 2))
-    x_tuppled = tuple_layer(x)
-    print(x_tuppled.shape)
+    tuple_dim = 2
+    inp_shape = (5,3,2)
+
+    ############################################################################
+    ## TESTING Tuples LAYER
+
+    ## Create graph
+    ## Input data, 32 experiments in batch, 7 observations in each experiment, 5 feature columns
+    data = tf.placeholder(shape = inp_shape, dtype = tf.float32)
+    tuples_layer = Tuples(tuple_dim = tuple_dim, input_shape = inp_shape[1:])
+    data_tup = tuples_layer(data)
+
+    ## Run for concrete example
     sess = tf.Session()
     init = tf.global_variables_initializer()
     sess.run(init)
     np.random.seed(0)
-    feed = {x : np.random.randn(5,3,2)}
-    x_eval, x_tuppled_eval = sess.run([x, x_tuppled], feed)
-    print("x value is: ", x_eval)
-    print("x tuppled value is:", x_tuppled_eval)
+    feed = {data : np.random.randn(*inp_shape)}
+    data_eval, data_tup_eval = sess.run([data, data_tup], feed)
 
     print("-------------------------------------------------------------------")
-    print("Testing permutation_invariant function:")
-    ##perm_inv_layer = permutation_invariant(input_shape = (5,3,2), layer_sizes = [5,10,5], reduce_fun = "mean")
+    print("A) Testing Tuples Layer:")
+    print("Tuple dimension is: ", tuple_dim)
+    print("Data shape is -- (batch size x num rows x num cols): ", data.shape)
+    print("Transformed data shape is -- (batch size x num rows ** tuple size, num cols * tuple size): ", data_tup.shape)
+    print("Data value is: ", data_eval)
+    print("Transformed data value is:", data_tup_eval)
+    ##
+    ############################################################################
+
+
+    ############################################################################
+    ## TESTING PermutationInvariant
     layer_sizes = [5, 9, 8, 6]
+    perm_inv = PermutationInvariant(input_shape = inp_shape[1:],
+                                    layer_sizes = layer_sizes,
+                                    tuple_dim = tuple_dim,
+                                    reduce_fun = "mean")
 
-    print("Shape of layer sizes: ", layer_sizes)
-    print("Shape of x tuples: ",x_tuppled.shape)
-    perm_inv = permutation_invariant(input_shape = (9,4),
-                                     layer_sizes = layer_sizes,
-                                     tuple_dim = 2,
-                                     reduce_fun = "mean")
+    data_perm_inv = perm_inv(data)
 
-    x_tuppled_perm_inv = perm_inv(x_tuppled)
-    print("Shape of permutation invariant layer output on x tuples: ", x_tuppled_perm_inv.shape)
-    print("Should be (shape of x tuppled)[0] x layer_sizes[-1]")
-
-#    x_tuppled#
-#    tuples_expanded = Lambda(lambda x : K.expand_dims(x, axis = 2))(x_tuppled)
-#    tuples_expanded
-#    conv = Conv2D(filters = layer_sizes[0], kernel_size = (1,1), data_format = "channels_last")(tuples_expanded)
-#    conv
-#    conv = Conv2D(filters = layer_sizes[1], kernel_size = (1,1), data_format = "channels_last")(conv)
-#    conv
-#    conv = Conv2D(filters = layer_sizes[2], kernel_size = (1,1), data_format = "channels_last")(conv)
-#    conv
-#    conv = Conv2D(filters = layer_sizes[3], kernel_size = (1,1), data_format = "channels_last")(conv)
-#    conv
-#    conv_sq = Lambda(lambda x : K.squeeze(x, axis = 2))(conv)
-#    conv_sq
-#    mean_layer = Lambda(lambda x : K.mean(x, axis = 1))(conv_sq)
-#    mean_layer
+    print("-------------------------------------------------------------------")
+    print("B) Testing permutation_invariant function:")
+    print("Data is the same as in A).")
+    print("Shape of permutation invariant layer output: ", data_perm_inv.shape)
+    ##
+    ############################################################################
