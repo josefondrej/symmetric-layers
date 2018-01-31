@@ -19,7 +19,7 @@ def permutation_invariant(input_shape, layer_sizes, tuple_dim = 2, reduce_fun = 
     Implements a permutation invariant layer.
 
     Args:
-    input_shape -- A `tuple` - input shape of one element in a batch.
+    input_shape -- A pair of `int` - input shape of one element in a batch.
     layer_sizes -- A `list` of `int`. Sizes of layers in neural network applied to each tuple.
     tuple_dim -- A `int`, size of one tuple.
     reduce_fun -- A `string`, type of function to "average" over all tuples.
@@ -28,18 +28,18 @@ def permutation_invariant(input_shape, layer_sizes, tuple_dim = 2, reduce_fun = 
     g -- A `Sequential` keras container.
     """
     g = Sequential()
-    g.add(Tuples(tuple_dim, input_shape = input_shape)) ## output_shape : input_shape[0] x input_shape[1]**tuple_dim x input_shape[2]*tuple_dim
-    prev_num_of_cols = input_shape[2] * tuple_dim
+    g.add(Tuples(tuple_dim, input_shape = input_shape))  ## input shape = batch_size x rows x cols -- rows = input_shape[0]**tuple_size, cols = input_shape[1]*tuple_size
+    g.add(Lambda(lambda x : K.expand_dims(x, axis = 2))) ## batch_size x rows x 1 x cols
     for layer_size in layer_sizes:
-        g.add(Conv2D(filters = layer_size, kernel_size = (1, prev_num_of_cols)))
-        prev_num_of_cols = layer_size
+        g.add(Conv2D(filters = layer_size, kernel_size = (1,1), data_format = "channels_last")) ## batch_size x rows x 1 x layer_size
+    g.add(Lambda(lambda x : K.squeeze(x, axis = 2))) ## batch_size x rows x cols
     if reduce_fun == "mean":
         lambda_layer = Lambda(lambda x : K.mean(x, axis = 1))
     elif reduce_fun == "max":
         lambda_layer = Lambda(lambda x : K.max(x, axis = 1))
     else:
         raise ValueError("Invalid value for argument `reduce_fun` provided. ")
-    g.add(lambda_layer)
+    g.add(lambda_layer) ## batch_size x cols
     return g
 
 class Tuples(Layer):
@@ -155,6 +155,31 @@ if __name__ == "__main__":
     print("-------------------------------------------------------------------")
     print("Testing permutation_invariant function:")
     ##perm_inv_layer = permutation_invariant(input_shape = (5,3,2), layer_sizes = [5,10,5], reduce_fun = "mean")
-    x_tuppled
-    Conv2D(filters = 10, kernel_size = (1,6))
-    Conv2D(filters = 10, kernel_size = (1,6))
+    layer_sizes = [5, 9, 8, 6]
+
+    print("Shape of layer sizes: ", layer_sizes)
+    print("Shape of x tuples: ",x_tuppled.shape)
+    perm_inv = permutation_invariant(input_shape = (9,4),
+                                     layer_sizes = layer_sizes,
+                                     tuple_dim = 2,
+                                     reduce_fun = "mean")
+
+    x_tuppled_perm_inv = perm_inv(x_tuppled)
+    print("Shape of permutation invariant layer output on x tuples: ", x_tuppled_perm_inv.shape)
+    print("Should be (shape of x tuppled)[0] x layer_sizes[-1]")
+
+#    x_tuppled#
+#    tuples_expanded = Lambda(lambda x : K.expand_dims(x, axis = 2))(x_tuppled)
+#    tuples_expanded
+#    conv = Conv2D(filters = layer_sizes[0], kernel_size = (1,1), data_format = "channels_last")(tuples_expanded)
+#    conv
+#    conv = Conv2D(filters = layer_sizes[1], kernel_size = (1,1), data_format = "channels_last")(conv)
+#    conv
+#    conv = Conv2D(filters = layer_sizes[2], kernel_size = (1,1), data_format = "channels_last")(conv)
+#    conv
+#    conv = Conv2D(filters = layer_sizes[3], kernel_size = (1,1), data_format = "channels_last")(conv)
+#    conv
+#    conv_sq = Lambda(lambda x : K.squeeze(x, axis = 2))(conv)
+#    conv_sq
+#    mean_layer = Lambda(lambda x : K.mean(x, axis = 1))(conv_sq)
+#    mean_layer
